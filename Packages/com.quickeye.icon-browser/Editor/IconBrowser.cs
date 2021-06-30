@@ -4,49 +4,111 @@ using UnityEditor;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 using static UnityEngine.GUILayout;
+using Random = UnityEngine.Random;
 
 namespace QuickEye.Editor
 {
 // add list view and grid view
-// icon size slider
-// sorting buttons
+// copy PNG to clipboard option
+// context click to context menu:
+// Copy: Name,FileID,PNG,GUIContent Expression
     public class IconBrowser : EditorWindow
     {
-        private string[] iconBlacklist =
-        {
-            "StateMachineEditor.Background"
-        };
+        private const string EditorPrefsKey = "quickeye.icon-browser/browser-state";
 
-        private Texture2D[] icons;
-        private Vector2 scrollPos;
-        private SearchField searchField;
-        private Texture2D[] searchResult;
-        private string searchString;
-        private float iconSize = 40;
-        private bool HasSearch => !string.IsNullOrWhiteSpace(searchString);
+        [MenuItem("Window/Icon Browser")]
+        private static void OpenWindow()
+        {
+            var w = GetWindow<IconBrowser>("Icon Browser");
+            w.titleContent.image = EditorGUIUtility.IconContent("Search Icon").image;
+        }
+
+        private static readonly Color LightSkinColor = new Color32(194, 194, 194, 255);
+        private static readonly Color DarkSkinColor = new Color32(56, 56, 56, 255);
+
+        private static Color AlternativeSkinBackgroundColor =>
+            EditorGUIUtility.isProSkin ? LightSkinColor : DarkSkinColor;
 
         [SerializeField]
         private Sorting sortingMode;
 
+        [SerializeField]
+        private ViewMode viewMode;
+
+        private string[] iconBlacklist =
+        {
+            "StateMachineEditor.Background",
+            "scene-template-empty-scene",
+            "scene-template-2d-scene",
+        };
+
+        private Texture2D[] icons;
+        private float iconSize = 40;
+        private readonly (float min, float max) iconSizeLimit = (16, 60);
+        private Vector2 scrollPos;
+        private SearchField searchField;
+        private Texture2D[] searchResult;
+        private string searchString;
+
         private Rect sortingButtonRect;
+        private bool HasSearch => !string.IsNullOrWhiteSpace(searchString);
+
         private void OnEnable()
         {
+            LoadFromPrefs();
             searchField = new SearchField();
             GetIcons();
             Sort();
         }
 
+        private void LoadFromPrefs()
+        {
+            if (!EditorPrefs.HasKey(EditorPrefsKey))
+                return;
+            try
+            {
+                JsonUtility.FromJsonOverwrite(EditorPrefs.GetString(EditorPrefsKey), this);
+            }
+            catch
+            {
+            }
+        }
+
+        private void OnDisable()
+        {
+            EditorPrefs.SetString(EditorPrefsKey, JsonUtility.ToJson(this));
+        }
+
         private void OnGUI()
         {
+            if (Event.current.alt)
+            {
+                EditorGUI.DrawRect(new Rect(Vector2.zero, position.size), AlternativeSkinBackgroundColor);
+            }
+
             DrawToolbar();
 
-            DrawIcons();
+            for (int i = 0; i < rowSize; i++)
+            {
+                var pos = new Vector2(i * elementWidth, 0);
+                EditorGUI.DrawRect(new Rect(pos, new Vector2(elementWidth, 5)), Random.ColorHSV());
+            }
+
+            var collection = HasSearch ? searchResult : icons;
+
+            if (viewMode == ViewMode.Grid)
+                DrawGridIcons(collection);
+            else
+                DrawListIcons(collection);
         }
+
 
         private void DrawToolbar()
         {
             using (new HorizontalScope(EditorStyles.toolbar, ExpandWidth(true)))
             {
+                SortingButton();
+                ViewModeButton();
                 using (var s = new EditorGUI.ChangeCheckScope())
                 {
                     searchString = searchField.OnToolbarGUI(searchString, MaxWidth(200));
@@ -54,9 +116,23 @@ namespace QuickEye.Editor
                         UpdateBySearch();
                 }
 
+                if (Button("deb", EditorStyles.toolbarButton))
+                {
+                    Debug.Log($"Size: {position.size}, Row: {rowSize},eleW: {elementWidth}");
+                }
+
                 FlexibleSpace();
-                iconSize = HorizontalSlider(iconSize, 16, 60, MaxWidth(100), MinWidth(55));
-                SortingButton();
+                iconSize = HorizontalSlider(iconSize, iconSizeLimit.min, iconSizeLimit.max, MaxWidth(100),
+                    MinWidth(55));
+            }
+        }
+
+        private void ViewModeButton()
+        {
+            var icon = viewMode == ViewMode.Grid ? "GridLayoutGroup Icon" : "VerticalLayoutGroup Icon";
+            if (Button(EditorGUIUtility.IconContent(icon), EditorStyles.toolbarButton, Width(30)))
+            {
+                viewMode = viewMode == ViewMode.Grid ? ViewMode.List : ViewMode.Grid;
             }
         }
 
@@ -76,28 +152,39 @@ namespace QuickEye.Editor
                 sortingButtonRect = GUILayoutUtility.GetLastRect();
         }
 
-        [MenuItem("Window/Icon Browser")]
-        private static void OpenWindow()
-        {
-            var w = GetWindow<IconBrowser>("Icon Browser");
-            w.titleContent.image = EditorGUIUtility.IconContent("Search Icon").image;
-        }
-
         private void GetIcons()
         {
+            var allIcons = AssetDatabaseUtil.GetAllEditorIcons();
+            var doubles = (from icon in allIcons
+                where icon.name.EndsWith("@2x")
+                where icon.name.StartsWith("d_")
+                select icon).ToArray();
+            // foreach (var d in doubles)
+            // {
+            //     Debug.Log($"{d.name}");
+            // }
+
+            var doubleNames = doubles.Select(d => d.name.Replace("@2x", "").Replace("d_", "")).ToArray();
             icons = (from icon in AssetDatabaseUtil.GetAllEditorIcons()
-                    where !icon.name.EndsWith("@2x")
-                    where !icon.name.StartsWith("d_")
+                    //where !icon.name.EndsWith("@2x")
+                    //where !icon.name.StartsWith("d_")
+                    //where !doubleNames.Contains(icon.name)
                     select icon
-                ).ToArray();
+                ).ToArray()
+                //.Concat(doubles).ToArray();
+                ;
         }
 
         private void Sort()
         {
             switch (sortingMode)
             {
-                case Sorting.Name: SortByName(); break;
-                case Sorting.Color: SortByColor(); break;
+                case Sorting.Name:
+                    SortByName();
+                    break;
+                case Sorting.Color:
+                    SortByColor();
+                    break;
                 default: throw new ArgumentOutOfRangeException();
             }
         }
@@ -142,13 +229,45 @@ namespace QuickEye.Editor
             return (h, s, v);
         }
 
-        private void DrawIcons()
+        private void DrawListIcons(Texture2D[] icons)
         {
-            var collection = HasSearch ? searchResult : icons;
-            var len = collection.Length;
+            var len = icons.Length;
             var style = EditorStyles.label;
             var elementWidth = iconSize + style.padding.horizontal + style.margin.horizontal;
-            var rowSize = Mathf.FloorToInt(position.width / elementWidth);
+            using (var s = new ScrollViewScope(scrollPos))
+            {
+                for (var i = 0; i < len; i++)
+                    using (new HorizontalScope(Height(iconSize)))
+                    {
+                        Space(5);
+                        var icon = icons[i];
+                        var iconContent = new GUIContent(icon);
+                        var textContent = new GUIContent(icon.name);
+                        using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
+                        {
+                            Label(iconContent, Width(iconSize+4));
+                            // if (Button(iconContent, "label", ExpandHeight(true)))
+                            // {
+                            //    OnIconClick(icon);
+                            // }
+                        }
+                            Space(5);
+                            Label(textContent,EditorStyles.largeLabel);
+                    }
+
+                scrollPos = s.scrollPosition;
+            }
+        }
+
+        private int rowSize;
+        private float elementWidth;
+
+        private void DrawGridIcons(Texture2D[] collection)
+        {
+            var len = collection.Length;
+            GUIStyle style = "label";
+            elementWidth = iconSize + style.padding.horizontal+1;// + style.margin.right;
+            rowSize = Mathf.FloorToInt((position.width-12) / elementWidth);
             using (var s = new ScrollViewScope(scrollPos))
             {
                 for (var i = 0; i < len; i += rowSize)
@@ -161,19 +280,22 @@ namespace QuickEye.Editor
 
                             using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
                             {
-                                if (Button(content, "label", ExpandHeight(true)))
-                                {
-                                    GUIUtility.systemCopyBuffer = icon.name;
-                                    Selection.activeObject = icon;
-                                    Debug.Log($"Name: {icon.name} FileID: {AssetDatabaseUtil.GetFileId(icon)}");
-                                }
+                                if (Button(content, style, MaxWidth(iconSize), Height(iconSize),ExpandWidth(true)))
+                                    OnIconClick(icon);
                             }
                         }
                     }
+
                 scrollPos = s.scrollPosition;
             }
         }
 
+        private static void OnIconClick(Texture2D icon)
+        {
+            GUIUtility.systemCopyBuffer = icon.name;
+
+            Debug.Log($"Icon Name: <b>{icon.name}</b> FileID: <b>{AssetDatabaseUtil.GetFileId(icon)}</b>");
+        }
         private static EditorGUIUtility.IconSizeScope KeepIconAspectRatio(Texture icon, Vector2 size)
         {
             if (icon.width > icon.height)
@@ -214,6 +336,13 @@ namespace QuickEye.Editor
         {
             Name,
             Color
+        }
+
+        [Serializable]
+        private enum ViewMode
+        {
+            Grid,
+            List
         }
     }
 }
