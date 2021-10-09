@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections;
-using UnityEditor;
 using UnityEngine;
 
 namespace QuickEye.Editor
@@ -15,16 +13,17 @@ namespace QuickEye.Editor
         public float ElementHeight { get; set; }
 
         public Action<Rect, int> DrawElement { get; set; }
-        public int rowCount;
+        public int RowCount { get; set; }
 
         public void OnGUI()
         {
-            ScrollViewRect =
-                GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.ExpandHeight(true),
-                    GUILayout.ExpandWidth(true));
+            var rect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.ExpandHeight(true),
+                GUILayout.ExpandWidth(true));
+            if (Event.current.type == EventType.Repaint)
+                ScrollViewRect = rect;
             var viewRect = new Rect(ScrollViewRect)
             {
-                height = rowCount * ElementHeight,
+                height = RowCount * ElementHeight,
                 width = ScrollViewRect.width - GUI.skin.verticalScrollbar.fixedWidth
             };
             var visibleRowCount = Mathf.CeilToInt(ScrollViewRect.height / ElementHeight) + 2;
@@ -35,7 +34,7 @@ namespace QuickEye.Editor
             using (var s = new GUI.ScrollViewScope(ScrollViewRect, scrollPos, viewRect))
             using (new GUI.GroupScope(viewRect))
             {
-                for (var i = 0; i < visibleRowCount && listIndex < rowCount; i++, listIndex++)
+                for (var i = 0; i < visibleRowCount && listIndex < RowCount; i++, listIndex++)
                 {
                     var pos = new Vector2(0, ElementHeight * listIndex);
                     var elementRect = new Rect

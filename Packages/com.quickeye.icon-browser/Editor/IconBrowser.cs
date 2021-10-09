@@ -14,15 +14,6 @@ namespace QuickEye.Editor
     // Copy: Name,FileID,PNG,GUIContent Expression
     public class IconBrowser : EditorWindow, IHasCustomMenu
     {
-        private const string EditorPrefsKey = "quickeye.icon-browser/browser-state";
-
-        private static string[] iconBlacklist =
-        {
-            "StateMachineEditor.Background",
-            "scene-template-empty-scene",
-            "scene-template-2d-scene",
-        };
-
         [MenuItem("Window/Icon Browser")]
         private static void OpenWindow()
         {
@@ -60,11 +51,11 @@ namespace QuickEye.Editor
         private float elementWidth;
 
         private bool HasSearch => !string.IsNullOrWhiteSpace(searchString);
-        private Texture2D[] Icons => HasSearch ? database.searchResult : database.icons;
+        private Texture2D[] Icons => HasSearch ? database.SearchResult : database.Icons;
 
         private void OnEnable()
         {
-            database = new IconBrowserDatabase();
+            database = new IconBrowserDatabase(searchString);
             searchField = new SearchField();
             Sort(sortingMode);
             UpdateLayout();
@@ -78,7 +69,7 @@ namespace QuickEye.Editor
             }
 
             DrawToolbar();
-            DrawIcons(Icons);
+            DrawIcons();
 
             DrawDebugView();
         }
@@ -119,7 +110,6 @@ namespace QuickEye.Editor
 
             var index = rowIndex * elementsInRow;
 
-            Debug.Log($"MES: {rect.width}/{elementWidth}={eInRow} === {index}");
             for (var j = 0; j < elementsInRow && index < iconCount; j++, index++)
             {
                 var icon = Icons[index];
@@ -218,10 +208,9 @@ namespace QuickEye.Editor
             }
         }
 
-        private void DrawIcons(Texture2D[] icons)
+        private void DrawIcons()
         {
-            if (Event.current.type == EventType.Layout)
-                listView.rowCount = layout == Layout.List ? icons.Length : GetGridRowCount();
+            listView.RowCount = layout == Layout.List ? Icons.Length : GetGridRowCount();
             var style = EditorStyles.label;
             listView.ElementHeight = iconSize + style.padding.vertical + style.margin.vertical;
             listView.OnGUI();

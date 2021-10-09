@@ -6,12 +6,20 @@ namespace QuickEye.Editor
 {
     public class IconBrowserDatabase
     {
-        public Texture2D[] icons;
-        public Texture2D[] searchResult;
+        private static string[] iconBlacklist =
+        {
+            "StateMachineEditor.Background",
+            "scene-template-empty-scene",
+            "scene-template-2d-scene",
+        };
+        
+        public Texture2D[] Icons;
+        public Texture2D[] SearchResult;
 
-        public IconBrowserDatabase()
+        public IconBrowserDatabase(string searchString)
         {
             GetIcons();
+            UpdateBySearch(searchString);
         }
         private void GetIcons()
         {
@@ -26,7 +34,7 @@ namespace QuickEye.Editor
             // }
 
             var doubleNames = doubles.Select(d => d.name.Replace("@2x", "").Replace("d_", "")).ToArray();
-            icons = (from icon in AssetDatabaseUtil.GetAllEditorIcons()
+            Icons = (from icon in AssetDatabaseUtil.GetAllEditorIcons()
                     //where !icon.name.EndsWith("@2x")
                     //where !icon.name.StartsWith("d_")
                     //where !doubleNames.Contains(icon.name)
@@ -38,7 +46,7 @@ namespace QuickEye.Editor
 
         public void SortByColor()
         {
-            icons = (from icon in icons
+            Icons = (from icon in Icons
                     let hsv = GetIconAverageHSV(icon)
                     orderby hsv.h, hsv.s, hsv.v
                     select icon
@@ -47,7 +55,7 @@ namespace QuickEye.Editor
 
         public void SortByName()
         {
-            icons = (from icon in icons
+            Icons = (from icon in Icons
                     orderby icon.name
                     select icon
                 ).ToArray();
@@ -55,7 +63,7 @@ namespace QuickEye.Editor
 
         public void UpdateBySearch(string searchString)
         {
-            searchResult = (from icon in icons
+            SearchResult = (from icon in Icons
                     let lowerName = icon.name.ToLower()
                     let lowerSearch = searchString.ToLower()
                     where lowerName.Contains(lowerSearch)
