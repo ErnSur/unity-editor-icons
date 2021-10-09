@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
@@ -8,13 +9,19 @@ using Random = UnityEngine.Random;
 
 namespace QuickEye.Editor
 {
-// add list view and grid view
-// copy PNG to clipboard option
-// context click to context menu:
-// Copy: Name,FileID,PNG,GUIContent Expression
+    // copy PNG to clipboard option
+    // context click to context menu:
+    // Copy: Name,FileID,PNG,GUIContent Expression
     public class IconBrowser : EditorWindow, IHasCustomMenu
     {
         private const string EditorPrefsKey = "quickeye.icon-browser/browser-state";
+
+        private static string[] iconBlacklist =
+        {
+            "StateMachineEditor.Background",
+            "scene-template-empty-scene",
+            "scene-template-2d-scene",
+        };
 
         [MenuItem("Window/Icon Browser")]
         private static void OpenWindow()
@@ -29,55 +36,38 @@ namespace QuickEye.Editor
         private static Color AlternativeSkinBackgroundColor =>
             EditorGUIUtility.isProSkin ? LightSkinColor : DarkSkinColor;
 
-        [SerializeField] private Sorting sortingMode;
-
-        [SerializeField] private ViewMode viewMode;
-
-        [SerializeField] private bool debugMode;
-
-        private string[] iconBlacklist =
-        {
-            "StateMachineEditor.Background",
-            "scene-template-empty-scene",
-            "scene-template-2d-scene",
-        };
-
-        private Texture2D[] icons;
-        private float iconSize = 40;
-        private readonly (float min, float max) iconSizeLimit = (16, 60);
-        private Vector2 scrollPos;
-        private SearchField searchField;
-        private Texture2D[] searchResult;
+        [SerializeField]
         private string searchString;
 
+        [SerializeField]
+        private Sorting sortingMode;
+
+        [SerializeField]
+        private Layout layout;
+
+        [SerializeField]
+        private bool debugMode;
+
+        [SerializeField]
+        private EfficientScrollView listView = new EfficientScrollView();
+
+        private SearchField searchField;
+        private IconBrowserDatabase database;
         private Rect sortingButtonRect;
+        private float iconSize = 40;
+        private readonly (float min, float max) iconSizeLimit = (16, 60);
+        private int elementsInRow;
+        private float elementWidth;
+
         private bool HasSearch => !string.IsNullOrWhiteSpace(searchString);
+        private Texture2D[] Icons => HasSearch ? database.searchResult : database.icons;
 
         private void OnEnable()
         {
-            Debug.Log("onEnable");
-            LoadFromPrefs();
+            database = new IconBrowserDatabase();
             searchField = new SearchField();
-            GetIcons();
-            Sort();
-        }
-
-        private void LoadFromPrefs()
-        {
-            if (!EditorPrefs.HasKey(EditorPrefsKey))
-                return;
-            try
-            {
-                JsonUtility.FromJsonOverwrite(EditorPrefs.GetString(EditorPrefsKey), this);
-            }
-            catch
-            {
-            }
-        }
-
-        private void OnDisable()
-        {
-            EditorPrefs.SetString(EditorPrefsKey, JsonUtility.ToJson(this));
+            Sort(sortingMode);
+            UpdateLayout();
         }
 
         private void OnGUI()
@@ -88,21 +78,85 @@ namespace QuickEye.Editor
             }
 
             DrawToolbar();
+            DrawIcons(Icons);
 
-            for (int i = 0; i < rowSize; i++)
+            DrawDebugView();
+        }
+
+        private void DrawListElement(Rect rect, int index)
+        {
+            var icon = Icons[index];
+            var iconContent = new GUIContent(icon);
+            var textContent = new GUIContent(icon.name);
+            using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
+            {
+                var iconRect = new Rect(rect) { size = new Vector2(iconSize + 4, iconSize + 4) };
+                GUI.Label(iconRect, iconContent);
+                var labelRect = new Rect(rect)
+                {
+                    xMin = iconRect.xMax
+                };
+                var labelStyle = new GUIStyle(EditorStyles.largeLabel)
+                {
+                    alignment = TextAnchor.MiddleLeft,
+                };
+
+                GUI.Label(labelRect, textContent, labelStyle);
+                if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
+                {
+                    OnIconClick(icon);
+                }
+            }
+        }
+
+        private void DrawGridElement(Rect rect, int rowIndex)
+        {
+            var iconCount = Icons.Length;
+            var style = new GUIStyle("label");
+            elementWidth = iconSize + style.padding.horizontal + 1; // + style.margin.right;
+            var eInRow = rect.width / elementWidth;
+            elementsInRow = Mathf.FloorToInt(eInRow);
+
+            var index = rowIndex * elementsInRow;
+
+            Debug.Log($"MES: {rect.width}/{elementWidth}={eInRow} === {index}");
+            for (var j = 0; j < elementsInRow && index < iconCount; j++, index++)
+            {
+                var icon = Icons[index];
+                var content = new GUIContent(icon, icon.name);
+
+                using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
+                {
+                    var buttonRect = new Rect();
+                    buttonRect.width = buttonRect.height = elementWidth;
+                    buttonRect.y = rect.y;
+                    buttonRect.x = j * elementWidth;
+                    if (GUI.Button(buttonRect, content, style))
+                        OnIconClick(icon);
+                }
+            }
+        }
+
+        private int GetGridRowCount()
+        {
+            var iconCount = Icons.Length;
+            var style = new GUIStyle("label");
+            elementWidth = iconSize + style.padding.horizontal + 1; // + style.margin.right;
+            elementsInRow = Mathf.FloorToInt(listView.ScrollViewRect.width / elementWidth);
+            var x = Mathf.CeilToInt((float)iconCount / elementsInRow);
+            return x;
+        }
+
+        private void DrawDebugView()
+        {
+            if (!debugMode)
+                return;
+            for (int i = 0; i < elementsInRow; i++)
             {
                 var pos = new Vector2(i * elementWidth, 0);
                 EditorGUI.DrawRect(new Rect(pos, new Vector2(elementWidth, 5)), Random.ColorHSV());
             }
-
-            var collection = HasSearch ? searchResult : icons;
-
-            if (viewMode == ViewMode.Grid)
-                DrawGridIcons(collection);
-            else
-                DrawListIcons(collection);
         }
-
 
         private void DrawToolbar()
         {
@@ -114,12 +168,7 @@ namespace QuickEye.Editor
                 {
                     searchString = searchField.OnToolbarGUI(searchString, MaxWidth(200));
                     if (s.changed)
-                        UpdateBySearch();
-                }
-
-                if (Button("deb", EditorStyles.toolbarButton))
-                {
-                    Debug.Log($"Size: {position.size}, Row: {rowSize},eleW: {elementWidth}");
+                        database.UpdateBySearch(searchString);
                 }
 
                 FlexibleSpace();
@@ -130,10 +179,11 @@ namespace QuickEye.Editor
 
         private void ViewModeButton()
         {
-            var icon = viewMode == ViewMode.Grid ? "GridLayoutGroup Icon" : "VerticalLayoutGroup Icon";
+            var icon = layout == Layout.Grid ? "GridLayoutGroup Icon" : "VerticalLayoutGroup Icon";
             if (Button(EditorGUIUtility.IconContent(icon), EditorStyles.toolbarButton, Width(30)))
             {
-                viewMode = viewMode == ViewMode.Grid ? ViewMode.List : ViewMode.Grid;
+                layout = layout == Layout.Grid ? Layout.List : Layout.Grid;
+                UpdateLayout();
             }
         }
 
@@ -143,8 +193,8 @@ namespace QuickEye.Editor
             {
                 var menu = new GenericMenu();
 
-                menu.AddItem(new GUIContent("Name"), sortingMode == Sorting.Name, SortByName);
-                menu.AddItem(new GUIContent("Color"), sortingMode == Sorting.Color, SortByColor);
+                menu.AddItem(new GUIContent("Name"), sortingMode == Sorting.Name, () => Sort(Sorting.Name));
+                menu.AddItem(new GUIContent("Color"), sortingMode == Sorting.Color, () => Sort(Sorting.Color));
 
                 menu.DropDown(sortingButtonRect);
             }
@@ -153,143 +203,33 @@ namespace QuickEye.Editor
                 sortingButtonRect = GUILayoutUtility.GetLastRect();
         }
 
-        private void GetIcons()
+        private void Sort(Sorting newSorting)
         {
-            var allIcons = AssetDatabaseUtil.GetAllEditorIcons();
-            var doubles = (from icon in allIcons
-                where icon.name.EndsWith("@2x")
-                where icon.name.StartsWith("d_")
-                select icon).ToArray();
-            // foreach (var d in doubles)
-            // {
-            //     Debug.Log($"{d.name}");
-            // }
-
-            var doubleNames = doubles.Select(d => d.name.Replace("@2x", "").Replace("d_", "")).ToArray();
-            icons = (from icon in AssetDatabaseUtil.GetAllEditorIcons()
-                    //where !icon.name.EndsWith("@2x")
-                    //where !icon.name.StartsWith("d_")
-                    //where !doubleNames.Contains(icon.name)
-                    select icon
-                ).ToArray()
-                //.Concat(doubles).ToArray();
-                ;
-        }
-
-        private void Sort()
-        {
+            sortingMode = newSorting;
             switch (sortingMode)
             {
                 case Sorting.Name:
-                    SortByName();
+                    database.SortByName();
                     break;
                 case Sorting.Color:
-                    SortByColor();
+                    database.SortByColor();
                     break;
                 default: throw new ArgumentOutOfRangeException();
             }
         }
 
-        private void SortByColor()
+        private void DrawIcons(Texture2D[] icons)
         {
-            sortingMode = Sorting.Color;
-            icons = (from icon in icons
-                    let hsv = GetIconAverageHSV(icon)
-                    orderby hsv.h, hsv.s, hsv.v
-                    select icon
-                ).ToArray();
-        }
-
-        private void SortByName()
-        {
-            sortingMode = Sorting.Name;
-            icons = (from icon in icons
-                    orderby icon.name
-                    select icon
-                ).ToArray();
-        }
-
-        private void UpdateBySearch()
-        {
-            searchResult = (from icon in icons
-                    let lowerName = icon.name.ToLower()
-                    let lowerSearch = searchString.ToLower()
-                    where lowerName.Contains(lowerSearch)
-                    orderby lowerName.IndexOf(lowerSearch)
-                    select icon
-                ).ToArray();
-        }
-
-        private static (float h, float s, float v) GetIconAverageHSV(Texture2D icon)
-        {
-            var readableTexture = new Texture2D(icon.width, icon.height, icon.format, icon.mipmapCount > 1);
-            Graphics.CopyTexture(icon, readableTexture);
-            var averageColor = AverageColorFromTexture(readableTexture);
-            Color.RGBToHSV(averageColor, out var h, out var s, out var v);
-            DestroyImmediate(readableTexture);
-            return (h, s, v);
-        }
-
-        private void DrawListIcons(Texture2D[] icons)
-        {
-            var len = icons.Length;
+            if (Event.current.type == EventType.Layout)
+                listView.rowCount = layout == Layout.List ? icons.Length : GetGridRowCount();
             var style = EditorStyles.label;
-            var elementWidth = iconSize + style.padding.horizontal + style.margin.horizontal;
-            using (var s = new ScrollViewScope(scrollPos))
-            {
-                for (var i = 0; i < len; i++)
-                    using (new HorizontalScope(Height(iconSize)))
-                    {
-                        Space(5);
-                        var icon = icons[i];
-                        var iconContent = new GUIContent(icon);
-                        var textContent = new GUIContent(icon.name);
-                        using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
-                        {
-                            Label(iconContent, Width(iconSize + 4));
-                            // if (Button(iconContent, "label", ExpandHeight(true)))
-                            // {
-                            //    OnIconClick(icon);
-                            // }
-                        }
-
-                        Space(5);
-                        Label(textContent, EditorStyles.largeLabel);
-                    }
-
-                scrollPos = s.scrollPosition;
-            }
+            listView.ElementHeight = iconSize + style.padding.vertical + style.margin.vertical;
+            listView.OnGUI();
         }
 
-        private int rowSize;
-        private float elementWidth;
-
-        private void DrawGridIcons(Texture2D[] collection)
+        private void UpdateLayout()
         {
-            var len = collection.Length;
-            GUIStyle style = "label";
-            elementWidth = iconSize + style.padding.horizontal + 1; // + style.margin.right;
-            rowSize = Mathf.FloorToInt((position.width - 12) / elementWidth);
-            using (var s = new ScrollViewScope(scrollPos))
-            {
-                for (var i = 0; i < len; i += rowSize)
-                    using (new HorizontalScope(Height(iconSize)))
-                    {
-                        for (var j = 0; j < rowSize && i + j < len; j++)
-                        {
-                            var icon = collection[i + j];
-                            var content = new GUIContent(icon, icon.name);
-
-                            using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
-                            {
-                                if (Button(content, style, MaxWidth(iconSize), Height(iconSize), ExpandWidth(true)))
-                                    OnIconClick(icon);
-                            }
-                        }
-                    }
-
-                scrollPos = s.scrollPosition;
-            }
+            listView.DrawElement = layout == Layout.Grid ? DrawGridElement : DrawListElement;
         }
 
         private static void OnIconClick(Texture2D icon)
@@ -315,25 +255,6 @@ namespace QuickEye.Editor
             return new EditorGUIUtility.IconSizeScope(size);
         }
 
-        private static Color32 AverageColorFromTexture(Texture2D tex)
-        {
-            var texColors = tex.GetPixels32();
-            var total = texColors.Length;
-
-            float r = 0;
-            float g = 0;
-            float b = 0;
-
-            for (var i = 0; i < total; i++)
-            {
-                r += texColors[i].r;
-                g += texColors[i].g;
-                b += texColors[i].b;
-            }
-
-            return new Color32((byte)(r / total), (byte)(g / total), (byte)(b / total), 255);
-        }
-
         [Serializable]
         private enum Sorting
         {
@@ -342,7 +263,7 @@ namespace QuickEye.Editor
         }
 
         [Serializable]
-        private enum ViewMode
+        private enum Layout
         {
             Grid,
             List
@@ -351,14 +272,6 @@ namespace QuickEye.Editor
         public void AddItemsToMenu(GenericMenu menu)
         {
             menu.AddItem(new GUIContent("Debug Mode"), debugMode, () => debugMode ^= true);
-            menu.AddItem(new GUIContent("Reset Settings"), false, ResetSettings);
-        }
-
-        private void ResetSettings()
-        {
-            var defaultState = CreateInstance<IconBrowser>();
-            Debug.Log("default created23 ");
-            //JsonUtility.FromJsonOverwrite(EditorPrefs.GetString(EditorPrefsKey), this);
         }
     }
 }
