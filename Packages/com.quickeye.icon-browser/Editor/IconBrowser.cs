@@ -119,7 +119,11 @@ namespace QuickEye.Editor
 
         private void CopyToClipboard(string valueName, string value)
         {
+#if UNITY_2019_1_OR_NEWER
             ShowNotification(new GUIContent($"Copied {valueName}"), .2f);
+#else
+            ShowNotification(new GUIContent($"Copied {valueName}"));
+#endif
             GUIUtility.systemCopyBuffer = value;
         }
 
@@ -232,14 +236,11 @@ namespace QuickEye.Editor
             {
                 SortingButton();
                 ViewModeButton();
-                var (lightOn, lightOff) = EditorGUIUtility.isProSkin
-                    ? ("SceneViewLighting On", "SceneViewLighting")
-                    : ("SceneViewLighting", "SceneViewLighting On");
-                var icon = drawAlternativeBackground ? lightOn : lightOff;
-                if (Button(EditorGUIUtility.IconContent(icon), EditorStyles.toolbarButton, Width(30)))
-                {
-                    drawAlternativeBackground = !drawAlternativeBackground;
-                }
+
+                drawAlternativeBackground =
+                    Toggle(drawAlternativeBackground, EditorGUIUtility.IconContent("SceneViewLighting"),
+                        EditorStyles.toolbarButton,
+                        Width(30));
 
                 using (var s = new EditorGUI.ChangeCheckScope())
                 {
@@ -307,9 +308,8 @@ namespace QuickEye.Editor
 
         private void UpdateLayout()
         {
-            listView.DrawElement = layout == Layout.Grid ? DrawGridElement : DrawListElement;
+            listView.DrawElement = layout == Layout.Grid ? (Action<Rect, int>)DrawGridElement : DrawListElement;
         }
-
 
         private static EditorGUIUtility.IconSizeScope KeepIconAspectRatio(Texture icon, Vector2 size)
         {
