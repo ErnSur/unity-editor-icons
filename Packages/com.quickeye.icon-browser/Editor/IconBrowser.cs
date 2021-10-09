@@ -12,7 +12,7 @@ namespace QuickEye.Editor
 // copy PNG to clipboard option
 // context click to context menu:
 // Copy: Name,FileID,PNG,GUIContent Expression
-    public class IconBrowser : EditorWindow
+    public class IconBrowser : EditorWindow, IHasCustomMenu
     {
         private const string EditorPrefsKey = "quickeye.icon-browser/browser-state";
 
@@ -29,11 +29,11 @@ namespace QuickEye.Editor
         private static Color AlternativeSkinBackgroundColor =>
             EditorGUIUtility.isProSkin ? LightSkinColor : DarkSkinColor;
 
-        [SerializeField]
-        private Sorting sortingMode;
+        [SerializeField] private Sorting sortingMode;
 
-        [SerializeField]
-        private ViewMode viewMode;
+        [SerializeField] private ViewMode viewMode;
+
+        [SerializeField] private bool debugMode;
 
         private string[] iconBlacklist =
         {
@@ -55,6 +55,7 @@ namespace QuickEye.Editor
 
         private void OnEnable()
         {
+            Debug.Log("onEnable");
             LoadFromPrefs();
             searchField = new SearchField();
             GetIcons();
@@ -245,14 +246,15 @@ namespace QuickEye.Editor
                         var textContent = new GUIContent(icon.name);
                         using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
                         {
-                            Label(iconContent, Width(iconSize+4));
+                            Label(iconContent, Width(iconSize + 4));
                             // if (Button(iconContent, "label", ExpandHeight(true)))
                             // {
                             //    OnIconClick(icon);
                             // }
                         }
-                            Space(5);
-                            Label(textContent,EditorStyles.largeLabel);
+
+                        Space(5);
+                        Label(textContent, EditorStyles.largeLabel);
                     }
 
                 scrollPos = s.scrollPosition;
@@ -266,8 +268,8 @@ namespace QuickEye.Editor
         {
             var len = collection.Length;
             GUIStyle style = "label";
-            elementWidth = iconSize + style.padding.horizontal+1;// + style.margin.right;
-            rowSize = Mathf.FloorToInt((position.width-12) / elementWidth);
+            elementWidth = iconSize + style.padding.horizontal + 1; // + style.margin.right;
+            rowSize = Mathf.FloorToInt((position.width - 12) / elementWidth);
             using (var s = new ScrollViewScope(scrollPos))
             {
                 for (var i = 0; i < len; i += rowSize)
@@ -280,7 +282,7 @@ namespace QuickEye.Editor
 
                             using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
                             {
-                                if (Button(content, style, MaxWidth(iconSize), Height(iconSize),ExpandWidth(true)))
+                                if (Button(content, style, MaxWidth(iconSize), Height(iconSize), ExpandWidth(true)))
                                     OnIconClick(icon);
                             }
                         }
@@ -296,6 +298,7 @@ namespace QuickEye.Editor
 
             Debug.Log($"Icon Name: <b>{icon.name}</b> FileID: <b>{AssetDatabaseUtil.GetFileId(icon)}</b>");
         }
+
         private static EditorGUIUtility.IconSizeScope KeepIconAspectRatio(Texture icon, Vector2 size)
         {
             if (icon.width > icon.height)
@@ -328,7 +331,7 @@ namespace QuickEye.Editor
                 b += texColors[i].b;
             }
 
-            return new Color32((byte) (r / total), (byte) (g / total), (byte) (b / total), 255);
+            return new Color32((byte)(r / total), (byte)(g / total), (byte)(b / total), 255);
         }
 
         [Serializable]
@@ -343,6 +346,19 @@ namespace QuickEye.Editor
         {
             Grid,
             List
+        }
+
+        public void AddItemsToMenu(GenericMenu menu)
+        {
+            menu.AddItem(new GUIContent("Debug Mode"), debugMode, () => debugMode ^= true);
+            menu.AddItem(new GUIContent("Reset Settings"), false, ResetSettings);
+        }
+
+        private void ResetSettings()
+        {
+            var defaultState = CreateInstance<IconBrowser>();
+            Debug.Log("default created23 ");
+            //JsonUtility.FromJsonOverwrite(EditorPrefs.GetString(EditorPrefsKey), this);
         }
     }
 }
