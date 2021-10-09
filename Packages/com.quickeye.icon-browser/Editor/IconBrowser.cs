@@ -26,8 +26,11 @@ namespace QuickEye.Editor
         private static Color AlternativeSkinBackgroundColor =>
             EditorGUIUtility.isProSkin ? LightSkinColor : DarkSkinColor;
 
+        private Color SelectedBackgroundColor =>
+            drawAlternativeBackground ? AlternativeSkinBackgroundColor : BackgroundColor;
+
         [SerializeField]
-        private string searchString;
+        private string searchString = "";
 
         [SerializeField]
         private Sorting sortingMode;
@@ -37,6 +40,9 @@ namespace QuickEye.Editor
 
         [SerializeField]
         private bool debugMode;
+
+        [SerializeField]
+        private bool drawAlternativeBackground;
 
         [SerializeField]
         private EfficientScrollView listView = new EfficientScrollView();
@@ -54,8 +60,8 @@ namespace QuickEye.Editor
 
         private void OnEnable()
         {
-            database = new IconBrowserDatabase(searchString);
             searchField = new SearchField();
+            database = new IconBrowserDatabase(searchString);
             Sort(sortingMode);
             UpdateLayout();
         }
@@ -166,7 +172,7 @@ namespace QuickEye.Editor
                 var mRect = new Rect(rect);
                 mRect.max -= new Vector2(2, 2);
                 mRect.min += new Vector2(2, 2);
-                EditorGUI.DrawRect(mRect, Event.current.alt ? AlternativeSkinBackgroundColor : BackgroundColor);
+                EditorGUI.DrawRect(mRect, SelectedBackgroundColor);
             }
         }
 
@@ -226,6 +232,15 @@ namespace QuickEye.Editor
             {
                 SortingButton();
                 ViewModeButton();
+                var (lightOn, lightOff) = EditorGUIUtility.isProSkin
+                    ? ("SceneViewLighting On", "SceneViewLighting")
+                    : ("SceneViewLighting", "SceneViewLighting On");
+                var icon = drawAlternativeBackground ? lightOn : lightOff;
+                if (Button(EditorGUIUtility.IconContent(icon), EditorStyles.toolbarButton, Width(30)))
+                {
+                    drawAlternativeBackground = !drawAlternativeBackground;
+                }
+
                 using (var s = new EditorGUI.ChangeCheckScope())
                 {
                     searchString = searchField.OnToolbarGUI(searchString, MaxWidth(200));
@@ -285,6 +300,8 @@ namespace QuickEye.Editor
             listView.RowCount = layout == Layout.List ? Icons.Length : GetGridRowCount();
             var style = EditorStyles.label;
             listView.ElementHeight = iconSize + style.padding.vertical + style.margin.vertical;
+            if (drawAlternativeBackground)
+                EditorGUI.DrawRect(listView.ScrollViewRect, AlternativeSkinBackgroundColor);
             listView.OnGUI();
         }
 
