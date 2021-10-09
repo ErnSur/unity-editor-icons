@@ -26,6 +26,7 @@ namespace QuickEye.Editor
                 height = RowCount * ElementHeight,
                 width = ScrollViewRect.width - GUI.skin.verticalScrollbar.fixedWidth
             };
+
             var visibleRowCount = Mathf.CeilToInt(ScrollViewRect.height / ElementHeight) + 2;
             var listIndex = Mathf.FloorToInt(scrollPos.y / ElementHeight);
 

@@ -1,6 +1,4 @@
 using System;
-using System.Globalization;
-using System.Linq;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
@@ -9,9 +7,6 @@ using Random = UnityEngine.Random;
 
 namespace QuickEye.Editor
 {
-    // copy PNG to clipboard option
-    // context click to context menu:
-    // Copy: Name,FileID,PNG,GUIContent Expression
     public class IconBrowser : EditorWindow, IHasCustomMenu
     {
         [MenuItem("Window/Icon Browser")]
@@ -23,6 +18,10 @@ namespace QuickEye.Editor
 
         private static readonly Color LightSkinColor = new Color32(194, 194, 194, 255);
         private static readonly Color DarkSkinColor = new Color32(56, 56, 56, 255);
+        private static readonly Color SelectedColor = new Color32(44, 93, 135, 255);
+
+        private static Color BackgroundColor =>
+            EditorGUIUtility.isProSkin ? DarkSkinColor : LightSkinColor;
 
         private static Color AlternativeSkinBackgroundColor =>
             EditorGUIUtility.isProSkin ? LightSkinColor : DarkSkinColor;
@@ -49,7 +48,7 @@ namespace QuickEye.Editor
         private readonly (float min, float max) iconSizeLimit = (16, 60);
         private int elementsInRow;
         private float elementWidth;
-
+        private SelectedItem selectedItem;
         private bool HasSearch => !string.IsNullOrWhiteSpace(searchString);
         private Texture2D[] Icons => HasSearch ? database.SearchResult : database.Icons;
 
@@ -63,15 +62,72 @@ namespace QuickEye.Editor
 
         private void OnGUI()
         {
-            if (Event.current.alt)
-            {
-                EditorGUI.DrawRect(new Rect(Vector2.zero, position.size), AlternativeSkinBackgroundColor);
-            }
-
             DrawToolbar();
             DrawIcons();
-
+            DrawFooter();
             DrawDebugView();
+        }
+
+        private void OnIconClick(Texture2D icon)
+        {
+            selectedItem = new SelectedItem(icon);
+        }
+
+        private void DrawFooter()
+        {
+            if (selectedItem == null)
+                return;
+            using (new HorizontalScope("In BigTitle", Height(40)))
+            using (KeepIconAspectRatio(selectedItem.icon, new Vector2(40, 40)))
+            {
+                Label(selectedItem.icon, Width(40));
+                using (new VerticalScope())
+                {
+                    Field("Name", selectedItem.name);
+                    Field("File ID", selectedItem.fileId.ToString());
+                }
+
+                using (new VerticalScope(Width(50)))
+                {
+                    if (Button("Save"))
+                        ExportSelectedIcon();
+                    if (Button("Icon Content"))
+                        CopyToClipboard("Icon Content", $"EditorGUIUtility.IconContent(\"{selectedItem.name}\")");
+                }
+            }
+
+
+            void Field(string label, string value)
+            {
+                using (new HorizontalScope())
+                {
+                    Label($"{label}: ", Width(45));
+                    if (Button(GUIContent.none, "label", Height(15)))
+                        CopyToClipboard(label, value);
+
+                    var rect = GUILayoutUtility.GetLastRect();
+                    GUI.Label(rect, value);
+                }
+            }
+        }
+
+        private void CopyToClipboard(string valueName, string value)
+        {
+            ShowNotification(new GUIContent($"Copied {valueName}"), .2f);
+            GUIUtility.systemCopyBuffer = value;
+        }
+
+        private void ExportSelectedIcon()
+        {
+            var path = EditorUtility.SaveFilePanel("Save icon", "Assets", selectedItem.name, "png");
+            if (string.IsNullOrEmpty(path))
+                return;
+            TextureUtils.ExportIconToPath(path, selectedItem.icon);
+            if (path.StartsWith(Application.dataPath))
+            {
+                path = path.Remove(0, Application.dataPath.Length);
+                AssetDatabase.ImportAsset($"Assets{path}");
+            }
         }
 
         private void DrawListElement(Rect rect, int index)
@@ -82,6 +138,7 @@ namespace QuickEye.Editor
             using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
             {
                 var iconRect = new Rect(rect) { size = new Vector2(iconSize + 4, iconSize + 4) };
+                DrawSelectedBox(rect, icon);
                 GUI.Label(iconRect, iconContent);
                 var labelRect = new Rect(rect)
                 {
@@ -93,10 +150,23 @@ namespace QuickEye.Editor
                 };
 
                 GUI.Label(labelRect, textContent, labelStyle);
+
                 if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
                 {
                     OnIconClick(icon);
                 }
+            }
+        }
+
+        private void DrawSelectedBox(Rect rect, Texture2D icon)
+        {
+            if (selectedItem?.icon == icon)
+            {
+                EditorGUI.DrawRect(rect, SelectedColor);
+                var mRect = new Rect(rect);
+                mRect.max -= new Vector2(2, 2);
+                mRect.min += new Vector2(2, 2);
+                EditorGUI.DrawRect(mRect, Event.current.alt ? AlternativeSkinBackgroundColor : BackgroundColor);
             }
         }
 
@@ -113,7 +183,7 @@ namespace QuickEye.Editor
             for (var j = 0; j < elementsInRow && index < iconCount; j++, index++)
             {
                 var icon = Icons[index];
-                var content = new GUIContent(icon, icon.name);
+                var content = new GUIContent(icon);
 
                 using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
                 {
@@ -121,6 +191,8 @@ namespace QuickEye.Editor
                     buttonRect.width = buttonRect.height = elementWidth;
                     buttonRect.y = rect.y;
                     buttonRect.x = j * elementWidth;
+                    DrawSelectedBox(buttonRect, icon);
+
                     if (GUI.Button(buttonRect, content, style))
                         OnIconClick(icon);
                 }
@@ -221,12 +293,6 @@ namespace QuickEye.Editor
             listView.DrawElement = layout == Layout.Grid ? DrawGridElement : DrawListElement;
         }
 
-        private static void OnIconClick(Texture2D icon)
-        {
-            GUIUtility.systemCopyBuffer = icon.name;
-
-            Debug.Log($"Icon Name: <b>{icon.name}</b> FileID: <b>{AssetDatabaseUtil.GetFileId(icon)}</b>");
-        }
 
         private static EditorGUIUtility.IconSizeScope KeepIconAspectRatio(Texture icon, Vector2 size)
         {
@@ -256,6 +322,21 @@ namespace QuickEye.Editor
         {
             Grid,
             List
+        }
+
+        [Serializable]
+        private class SelectedItem
+        {
+            public string name;
+            public long fileId;
+            public Texture2D icon;
+
+            public SelectedItem(Texture2D icon)
+            {
+                name = icon.name;
+                fileId = AssetDatabaseUtil.GetFileId(icon);
+                this.icon = icon;
+            }
         }
 
         public void AddItemsToMenu(GenericMenu menu)

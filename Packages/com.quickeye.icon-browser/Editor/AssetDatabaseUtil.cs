@@ -12,11 +12,6 @@ namespace QuickEye.Editor
     public static class AssetDatabaseUtil
     {
         public static readonly AssetBundle EditorAssetBundle = GetEditorAssetBundle();
-
-        private static readonly PropertyInfo InspectorModeInfo =
-            typeof(SerializedObject).GetProperty("inspectorMode", BindingFlags.NonPublic | BindingFlags.Instance);
-
-        private const string FileIdFieldName = "m_LocalIdentfierInFile"; //note the misspelling!
         public static readonly string IconsPath = GetIconsPath();
 
         public static Texture2D[] GetAllEditorIcons()
@@ -29,7 +24,7 @@ namespace QuickEye.Editor
                 where tex != null
                 select tex).ToArray();
         }
-        
+
         private static AssetBundle GetEditorAssetBundle()
         {
             var editorGUIUtility = typeof(EditorGUIUtility);
@@ -37,18 +32,21 @@ namespace QuickEye.Editor
                 "GetEditorAssetBundle",
                 BindingFlags.NonPublic | BindingFlags.Static);
 
-            return (AssetBundle) getEditorAssetBundle.Invoke(null, null);
+            return (AssetBundle)getEditorAssetBundle.Invoke(null, null);
         }
 
         public static long GetFileId(Object obj)
         {
-#if UNITY_2018_1_OR_NEWER && false
+#if UNITY_2018_1_OR_NEWER
             AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out _, out long fileId);
             return fileId;
 #else
+            const string fileIdFieldName = "m_LocalIdentfierInFile"; //note the misspelling!
+            var inspectorModeInfo =
+                typeof(SerializedObject).GetProperty("inspectorMode", BindingFlags.NonPublic | BindingFlags.Instance);
             var serializedObject = new SerializedObject(obj);
-            InspectorModeInfo.SetValue(serializedObject, InspectorMode.Debug);
-            return serializedObject.FindProperty(FileIdFieldName).longValue;
+            inspectorModeInfo.SetValue(serializedObject, InspectorMode.Debug);
+            return serializedObject.FindProperty(fileIdFieldName).longValue;
 #endif
         }
 
