@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using UnityEditor;
 using UnityEngine;
 
 namespace QuickEye.Editor
@@ -28,6 +29,10 @@ namespace QuickEye.Editor
                 where icon.name.EndsWith("@2x")
                 where icon.name.StartsWith("d_")
                 select icon).ToArray();
+            
+            var iconsWithDarkSkinAlternative = (from icon in allIcons
+                where icon.name.StartsWith("d_")
+                select icon.name.Substring(2)).ToArray();
             // foreach (var d in doubles)
             // {
             //     Debug.Log($"{d.name}");
@@ -36,7 +41,9 @@ namespace QuickEye.Editor
             var doubleNames = doubles.Select(d => d.name.Replace("@2x", "").Replace("d_", "")).ToArray();
             Icons = (from icon in AssetDatabaseUtil.GetAllEditorIcons()
                     //where !icon.name.EndsWith("@2x")
-                    //where !icon.name.StartsWith("d_")
+                    where EditorGUIUtility.isProSkin ? 
+                        !iconsWithDarkSkinAlternative.Contains(icon.name)
+                        : !icon.name.StartsWith("d_")
                     //where !doubleNames.Contains(icon.name)
                     select icon
                 ).ToArray()

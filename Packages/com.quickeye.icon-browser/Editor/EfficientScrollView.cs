@@ -9,7 +9,8 @@ namespace QuickEye.Editor
         [SerializeField]
         private Vector2 scrollPos;
 
-        public Rect ScrollViewRect { get; private set; }
+        public Rect Position { get; private set; }
+        public Rect ViewRect { get; private set; }
         public float ElementHeight { get; set; }
 
         public Action<Rect, int> DrawElement { get; set; }
@@ -20,20 +21,20 @@ namespace QuickEye.Editor
             var rect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.ExpandHeight(true),
                 GUILayout.ExpandWidth(true));
             if (Event.current.type == EventType.Repaint)
-                ScrollViewRect = rect;
-            var viewRect = new Rect(ScrollViewRect)
+                Position = rect;
+            ViewRect = new Rect(Position)
             {
                 height = RowCount * ElementHeight,
-                width = ScrollViewRect.width - GUI.skin.verticalScrollbar.fixedWidth
+                width = Position.width - GUI.skin.verticalScrollbar.fixedWidth
             };
 
-            var visibleRowCount = Mathf.CeilToInt(ScrollViewRect.height / ElementHeight) + 2;
+            var visibleRowCount = Mathf.CeilToInt(Position.height / ElementHeight) + 2;
             var listIndex = Mathf.FloorToInt(scrollPos.y / ElementHeight);
 
-            var elementSize = new Vector2(ScrollViewRect.width, ElementHeight);
+            var elementSize = new Vector2(ViewRect.width, ElementHeight);
 
-            using (var s = new GUI.ScrollViewScope(ScrollViewRect, scrollPos, viewRect))
-            using (new GUI.GroupScope(viewRect))
+            using (var s = new GUI.ScrollViewScope(Position, scrollPos, ViewRect))
+            using (new GUI.GroupScope(ViewRect))
             {
                 for (var i = 0; i < visibleRowCount && listIndex < RowCount; i++, listIndex++)
                 {
