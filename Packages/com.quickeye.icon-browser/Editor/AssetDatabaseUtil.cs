@@ -13,15 +13,7 @@ namespace QuickEye.Editor
     {
         public static readonly AssetBundle EditorAssetBundle = GetEditorAssetBundle();
         public static readonly string IconsPath = GetIconsPath();
-
-        [MenuItem("MENUNAME/test")]
-        public static void NAME()
-        {
-            foreach (var tuple in GetAllEditorIconsWithSource())
-            {
-                Debug.Log(tuple.path);
-            }
-        }
+        
         public static Texture2D[] GetAllEditorIcons()
         {
             const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
