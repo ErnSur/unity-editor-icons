@@ -6,11 +6,12 @@ using UnityEngine;
 
 namespace QuickEye.Editor
 {
+    [Flags]
     public enum IconFilter
     {
-        ShowAll = 0,
-        HideAlternativeSkin = 1,
-        HideSmallerVersions = 2,
+        Everything = 0,
+        AlternativeSkin = 1,
+        SmallerVersions = 2,
     }
 
     public class IconBrowserDatabase
@@ -78,7 +79,7 @@ namespace QuickEye.Editor
 
         public void UpdateByFilter(IconFilter filter)
         {
-            if (filter == IconFilter.ShowAll)
+            if (filter == IconFilter.Everything)
             {
                 Icons = AllIcons;
                 return;
@@ -86,12 +87,12 @@ namespace QuickEye.Editor
 
             IEnumerable<Texture2D> icons = AllIcons;
 
-            if (filter.HasFlag(IconFilter.HideAlternativeSkin))
+            if (!filter.HasFlag(IconFilter.AlternativeSkin))
                 icons = icons.Where(icon => EditorGUIUtility.isProSkin
                     ? !iconsWithDarkSkinAlternative.Contains(icon.name)
                     : !icon.name.StartsWith("d_"));
             
-            if (filter.HasFlag(IconFilter.HideSmallerVersions))
+            if (!filter.HasFlag(IconFilter.SmallerVersions))
                 icons = icons.Where(icon => !icon.name.EndsWith(".Small") || !smallerIcons.Contains(icon.name));
             Icons = icons.ToArray();
         }

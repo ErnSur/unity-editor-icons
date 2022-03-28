@@ -39,6 +39,9 @@ namespace QuickEye.Editor
 
         [SerializeField]
         private Layout layout;
+        
+        [SerializeField]
+        private IconFilter filter;
 
         [SerializeField]
         private bool debugMode;
@@ -51,7 +54,7 @@ namespace QuickEye.Editor
 
         private SearchField searchField;
         private IconBrowserDatabase database;
-        private Rect sortingButtonRect;
+        private Rect sortingButtonRect, filterButtonRect;
         private float iconSize = 40;
         private readonly (float min, float max) iconSizeLimit = (16, 60);
         private int elementsInRow;
@@ -65,6 +68,7 @@ namespace QuickEye.Editor
             searchField = new SearchField();
             database = new IconBrowserDatabase(searchString);
             Sort(sortingMode);
+            UpdateFilterAndSearch();
             UpdateLayout();
         }
 
@@ -153,7 +157,7 @@ namespace QuickEye.Editor
             {
                 var iconRect = new Rect(rect) { size = new Vector2(iconSize + 4, iconSize + 4) };
                 iconRect.x += ListIconPadding;
-                iconRectWidth = iconRect.width + ListIconPadding *2;
+                iconRectWidth = iconRect.width + ListIconPadding * 2;
                 DrawSelectedBox(rect, icon);
                 GUI.Label(iconRect, iconContent, Styles.CenteredIcon);
 
@@ -240,20 +244,12 @@ namespace QuickEye.Editor
                 SortingButton();
                 ViewModeButton();
                 BackgroundToggle();
-                FilterDropdown();
+                FilterButton();
                 SearchField();
                 FlexibleSpace();
                 IconSizeSlider();
             }
         }
-
-        private IconFilter filter;
-        private void FilterDropdown()
-        {
-            filter = (IconFilter)
-                EditorGUILayout.EnumFlagsField(EditorGUIUtility.IconContent("Filter Icon"), filter);
-        }
-
         private void IconSizeSlider()
         {
             iconSize = HorizontalSlider(iconSize, iconSizeLimit.min, iconSizeLimit.max, MaxWidth(100),
@@ -305,6 +301,35 @@ namespace QuickEye.Editor
 
             if (Event.current.type == EventType.Repaint)
                 sortingButtonRect = GUILayoutUtility.GetLastRect();
+        }
+
+        private void FilterButton()
+        {
+            if (Button(EditorGUIUtility.IconContent("Filter Icon"), EditorStyles.toolbarDropDown, Width(35)))
+            {
+                var menu = new GenericMenu();
+                AddContextMenuItem("Alternative Skin", IconFilter.AlternativeSkin);
+                AddContextMenuItem("Smaller Sizes", IconFilter.SmallerVersions);
+                menu.DropDown(filterButtonRect);
+
+                void AddContextMenuItem(string label, IconFilter filterToToggle)
+                {
+                    menu.AddItem(new GUIContent(label), filter.HasFlag(filterToToggle), () =>
+                    {
+                        filter ^= filterToToggle;
+                        UpdateFilterAndSearch();
+                    });
+                }
+            }
+
+            if (Event.current.type == EventType.Repaint)
+                filterButtonRect = GUILayoutUtility.GetLastRect();
+        }
+
+        private void UpdateFilterAndSearch()
+        {
+            database.UpdateByFilter(filter);
+            database.UpdateBySearch(searchString);
         }
 
         private void Sort(Sorting newSorting)
