@@ -14,6 +14,14 @@ namespace QuickEye.Editor
         public static readonly AssetBundle EditorAssetBundle = GetEditorAssetBundle();
         public static readonly string IconsPath = GetIconsPath();
 
+        [MenuItem("MENUNAME/test")]
+        public static void NAME()
+        {
+            foreach (var tuple in GetAllEditorIconsWithSource())
+            {
+                Debug.Log(tuple.path);
+            }
+        }
         public static Texture2D[] GetAllEditorIcons()
         {
             const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
@@ -24,7 +32,16 @@ namespace QuickEye.Editor
                 where tex != null
                 select tex).ToArray();
         }
-
+        public static (Texture2D tex, string path)[] GetAllEditorIconsWithSource()
+        {
+            const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
+            return (from name in EditorAssetBundle.GetAllAssetNames()
+                where name.StartsWith(IconsPath, comparison)
+                where name.EndsWith(".png", comparison) || name.EndsWith(".asset", comparison)
+                let tex = EditorAssetBundle.LoadAsset<Texture2D>(name)
+                where tex != null
+                select (tex,name)).ToArray();
+        }
         private static AssetBundle GetEditorAssetBundle()
         {
             var editorGUIUtility = typeof(EditorGUIUtility);

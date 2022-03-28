@@ -1,10 +1,18 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
 namespace QuickEye.Editor
 {
+    public enum IconFilter
+    {
+        ShowAll = 0,
+        HideAlternativeSkin = 1,
+        HideSmallerVersions = 2,
+    }
+
     public class IconBrowserDatabase
     {
         private static string[] iconBlacklist =
@@ -13,42 +21,31 @@ namespace QuickEye.Editor
             "scene-template-empty-scene",
             "scene-template-2d-scene",
         };
-        
+
+        private Texture2D[] AllIcons;
         public Texture2D[] Icons;
         public Texture2D[] SearchResult;
+
+        private string[] iconsWithDarkSkinAlternative;
+        private string[] smallerIcons;
 
         public IconBrowserDatabase(string searchString)
         {
             GetIcons();
             UpdateBySearch(searchString);
         }
+
         private void GetIcons()
         {
-            var allIcons = AssetDatabaseUtil.GetAllEditorIcons();
-            var doubles = (from icon in allIcons
-                where icon.name.EndsWith("@2x")
-                where icon.name.StartsWith("d_")
-                select icon).ToArray();
-            
-            var iconsWithDarkSkinAlternative = (from icon in allIcons
+            AllIcons = AssetDatabaseUtil.GetAllEditorIcons();
+
+            iconsWithDarkSkinAlternative = (from icon in AllIcons
                 where icon.name.StartsWith("d_")
                 select icon.name.Substring(2)).ToArray();
-            // foreach (var d in doubles)
-            // {
-            //     Debug.Log($"{d.name}");
-            // }
-
-            var doubleNames = doubles.Select(d => d.name.Replace("@2x", "").Replace("d_", "")).ToArray();
-            Icons = (from icon in AssetDatabaseUtil.GetAllEditorIcons()
-                    //where !icon.name.EndsWith("@2x")
-                    where EditorGUIUtility.isProSkin ? 
-                        !iconsWithDarkSkinAlternative.Contains(icon.name)
-                        : !icon.name.StartsWith("d_")
-                    //where !doubleNames.Contains(icon.name)
-                    select icon
-                ).ToArray()
-                //.Concat(doubles).ToArray();
-                ;
+            smallerIcons = (from icon in AllIcons
+                where icon.name.EndsWith("@2x")
+                select icon.name.Substring(0, icon.name.Length - 3)).ToArray();
+            Icons = AllIcons;
         }
 
         public void SortByColor()
@@ -77,6 +74,26 @@ namespace QuickEye.Editor
                     orderby lowerName.IndexOf(lowerSearch, StringComparison.Ordinal)
                     select icon
                 ).ToArray();
+        }
+
+        public void UpdateByFilter(IconFilter filter)
+        {
+            if (filter == IconFilter.ShowAll)
+            {
+                Icons = AllIcons;
+                return;
+            }
+
+            IEnumerable<Texture2D> icons = AllIcons;
+
+            if (filter.HasFlag(IconFilter.HideAlternativeSkin))
+                icons = icons.Where(icon => EditorGUIUtility.isProSkin
+                    ? !iconsWithDarkSkinAlternative.Contains(icon.name)
+                    : !icon.name.StartsWith("d_"));
+            
+            if (filter.HasFlag(IconFilter.HideSmallerVersions))
+                icons = icons.Where(icon => !icon.name.EndsWith(".Small") || !smallerIcons.Contains(icon.name));
+            Icons = icons.ToArray();
         }
 
         private static (float h, float s, float v) GetIconAverageHSV(Texture2D icon)
