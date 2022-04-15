@@ -2,10 +2,11 @@ using System;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
-using static UnityEngine.GUILayout;
 using Random = UnityEngine.Random;
+using static UnityEngine.GUILayout;
+using static QuickEye.Editor.IconWindow.QuickEyeGUIUtility;
 
-namespace QuickEye.Editor
+namespace QuickEye.Editor.IconWindow
 {
     public class IconBrowser : EditorWindow, IHasCustomMenu
     {
@@ -16,19 +17,7 @@ namespace QuickEye.Editor
             w.titleContent.image = EditorGUIUtility.IconContent("Search Icon").image;
         }
 
-        private static readonly Color LightSkinColor = new Color32(194, 194, 194, 255);
-        private static readonly Color DarkSkinColor = new Color32(56, 56, 56, 255);
-        private static readonly Color HighlightColor = new Color32(255, 255, 255, 20);
         private const int ListIconPadding = 4;
-
-        private static Color BackgroundColor =>
-            EditorGUIUtility.isProSkin ? DarkSkinColor : LightSkinColor;
-
-        private static Color AlternativeSkinBackgroundColor =>
-            EditorGUIUtility.isProSkin ? LightSkinColor : DarkSkinColor;
-
-        private Color SelectedBackgroundColor =>
-            drawAlternativeBackground ? AlternativeSkinBackgroundColor : BackgroundColor;
 
         [SerializeField]
         private string searchString = "";
@@ -51,22 +40,32 @@ namespace QuickEye.Editor
         [SerializeField]
         private EfficientScrollView listView = new EfficientScrollView();
 
-        private SearchField searchField;
-        private IconBrowserDatabase database;
+        private SearchField _searchField;
+        private IconBrowserDatabase _database;
 
-        private Rect sortingButtonRect, filterButtonRect;
-        private float iconSize = 40;
-        private readonly (float min, float max) iconSizeLimit = (16, 60);
-        private int elementsInRow;
-        private float iconRectWidth;
-        private SelectedItem selectedItem;
+        private Rect _sortingButtonRect, _filterButtonRect;
+        private float _iconSize = 40;
+        private readonly (float min, float max) _iconSizeLimit = (16, 60);
+        private int _elementsInRow;
+        private float _iconRectWidth;
+        private int _listViewControlId;
+
+        [SerializeField]
+        private EditorAssetBundleImage _selectedImage;
+
+        [SerializeField]
+        private int _selectedIndex;
+
+        public Color SelectedBackgroundColor =>
+            drawAlternativeBackground ? Styles.AlternativeSkinBackgroundColor : Styles.BackgroundColor;
+
         private bool HasSearch => !string.IsNullOrWhiteSpace(searchString);
-        private Texture2D[] Icons => HasSearch ? database.SearchResult : database.Icons;
+        private EditorAssetBundleImage[] Icons => HasSearch ? _database.SearchResult : _database.Icons;
 
         private void OnEnable()
         {
-            searchField = new SearchField();
-            database = new IconBrowserDatabase(searchString);
+            _searchField = new SearchField();
+            _database = new IconBrowserDatabase(searchString);
             Sort(sortingMode);
             UpdateFilterAndSearch();
             UpdateLayout();
@@ -80,53 +79,132 @@ namespace QuickEye.Editor
             DrawDebugView();
         }
 
-        private void OnIconClick(Texture2D icon)
+        private void DrawToolbar()
         {
-            selectedItem = new SelectedItem(icon);
+            using (new HorizontalScope(EditorStyles.toolbar, ExpandWidth(true)))
+            {
+                SortingButton();
+                ViewModeButton();
+                BackgroundToggle();
+                FilterButton();
+                Space(2);
+                SearchField();
+                IconCount();
+                FlexibleSpace();
+                IconSizeSlider();
+            }
+        }
+        
+        private void DrawIcons()
+        {
+            listView.RowCount = layout == Layout.List ? Icons.Length : GetGridRowCount();
+            var style = EditorStyles.label;
+            listView.ElementHeight = _iconSize + style.padding.vertical + style.margin.vertical;
+            if (drawAlternativeBackground)
+            {
+                var rect = layout == Layout.Grid
+                    ? listView.Position
+                    : new Rect(listView.Position)
+                    {
+                        width = _iconRectWidth,
+                    };
+
+                EditorGUI.DrawRect(rect, Styles.AlternativeSkinBackgroundColor);
+            }
+
+            listView.OnGUI();
+            ArrowNavigation();
+        }
+
+        private void ArrowNavigation()
+        {
+            var ev = Event.current;
+            if (ev.type != EventType.KeyDown)
+                return;
+            switch (ev.keyCode)
+            {
+                case KeyCode.LeftArrow:
+                    OnIconClick(Mathf.Max(_selectedIndex - 1, 0));
+                    ev.Use();
+                    break;
+                case KeyCode.RightArrow:
+                    OnIconClick(Mathf.Min(_selectedIndex + 1, Icons.Length - 1));
+                    ev.Use();
+                    break;
+                case KeyCode.UpArrow:
+                    OnIconClick(Mathf.Max(_selectedIndex - _elementsInRow, 0));
+                    ev.Use();
+                    break;
+                case KeyCode.DownArrow:
+                    OnIconClick(Mathf.Min(_selectedIndex + _elementsInRow, Icons.Length - 1));
+                    ev.Use();
+                    break;
+            }
+        }
+
+        private void OnIconClick(int index)
+        {
+            _selectedImage = Icons[index];
+            _selectedIndex = index;
+            GUIUtility.keyboardControl = 0;
         }
 
         private void DrawFooter()
         {
-            if (selectedItem == null || selectedItem.icon == null)
+            if (_selectedImage == null || _selectedImage.texture == null)
                 return;
-            using (new HorizontalScope("box", Height(40)))
+
+            using (new HorizontalScope("box", Height(40), ExpandWidth(true)))
             {
-                using (KeepIconAspectRatio(selectedItem.icon, new Vector2(40, 40)))
-                    if (Button(selectedItem.icon, Styles.CenteredIcon, Width(43), ExpandHeight(true)))
-                        ShowNotification(new GUIContent(selectedItem.icon));
+                using (KeepIconAspectRatio(_selectedImage, new Vector2(40, 40)))
+                    if (Button(_selectedImage, Styles.CenteredIcon, Width(43), ExpandHeight(true)))
+                        ShowNotification(Event.current.shift
+                            ? EditorGUIUtility.IconContent(_selectedImage.name)
+                            : new GUIContent(_selectedImage));
+
+                using (new VerticalScope(MinWidth(50)))
+                {
+                    Field(Label, "Name", _selectedImage.name, true);
+                    Field(Label, "File ID", _selectedImage.fileId.ToString(), true);
+                    Field(Label, "Size", $"{_selectedImage.texture.width}x{_selectedImage.texture.height}", false);
+                }
 
                 using (new VerticalScope())
                 {
-                    Field("Name", selectedItem.name, true);
-                    Field("File ID", selectedItem.fileId.ToString(), true);
-                    Field("Size", $"{selectedItem.icon.width}x{selectedItem.icon.height}", false);
+                    Field(SelectableLabel, "Path", _selectedImage.assetBundlePath, true);
+                    Field(Label, "Scaling", _selectedImage.RetinaVersion ?? "One Size", false);
                 }
 
+                FlexibleSpace();
                 using (new VerticalScope(Width(50)))
                 {
                     if (Button("Save"))
                         ExportSelectedIcon();
                     if (Button("Icon Content"))
-                        CopyToClipboard("Icon Content", $"EditorGUIUtility.IconContent(\"{selectedItem.name}\")");
-                    if (debugMode && Button("Debug Export"))
-                    {
-                        TextureUtils.DebugExport(selectedItem.icon);
-                    }
+                        CopyToClipboard("Icon Content", $"EditorGUIUtility.IconContent(\"{_selectedImage.name}\")");
                 }
             }
 
-            void Field(string label, string value, bool copy)
+            void Field(Action<string, GUILayoutOption[]> control, string label, string value, bool copy)
             {
                 using (new HorizontalScope())
                 {
                     Label($"{label}: ", Width(45));
-                    Label(value);
+                    control(value, null);
                 }
 
                 var r = GUILayoutUtility.GetLastRect();
                 if (copy && GUI.Button(r, GUIContent.none, GUIStyle.none))
                     CopyToClipboard(label, value);
             }
+        }
+
+        private static void SelectableLabel(
+            string text,
+            params GUILayoutOption[] options)
+        {
+            var style = EditorStyles.label;
+            EditorGUI.SelectableLabel(EditorGUILayout.GetControlRect(false, 18f, style, options), text, style);
         }
 
         private void CopyToClipboard(string valueName, string value)
@@ -141,10 +219,10 @@ namespace QuickEye.Editor
 
         private void ExportSelectedIcon()
         {
-            var path = EditorUtility.SaveFilePanel("Save icon", "Assets", selectedItem.name, "png");
+            var path = EditorUtility.SaveFilePanel("Save icon", "Assets", _selectedImage.name, "png");
             if (string.IsNullOrEmpty(path))
                 return;
-            TextureUtils.ExportIconToPath(path, selectedItem.icon);
+            TextureUtils.ExportIconToPath(path, _selectedImage.texture);
             if (path.StartsWith(Application.dataPath))
             {
                 path = path.Remove(0, Application.dataPath.Length);
@@ -157,11 +235,11 @@ namespace QuickEye.Editor
             var icon = Icons[index];
             var iconContent = new GUIContent(icon);
             var textContent = new GUIContent(icon.name);
-            using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
+            using (KeepIconAspectRatio(icon, new Vector2(_iconSize, _iconSize)))
             {
-                var iconRect = new Rect(rect) { size = new Vector2(iconSize + 4, iconSize + 4) };
+                var iconRect = new Rect(rect) { size = new Vector2(_iconSize + 4, _iconSize + 4) };
                 iconRect.x += ListIconPadding;
-                iconRectWidth = iconRect.width + ListIconPadding * 2;
+                _iconRectWidth = iconRect.width + ListIconPadding * 2;
                 DrawSelectedBox(rect, icon);
                 GUI.Label(iconRect, iconContent, Styles.CenteredIcon);
 
@@ -178,16 +256,16 @@ namespace QuickEye.Editor
 
                 if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
                 {
-                    OnIconClick(icon);
+                    OnIconClick(index);
                 }
             }
         }
 
-        private void DrawSelectedBox(Rect rect, Texture2D icon)
+        private void DrawSelectedBox(Rect rect, EditorAssetBundleImage icon)
         {
-            if (selectedItem?.icon == icon)
+            if (_selectedImage == icon)
             {
-                EditorGUI.DrawRect(rect, HighlightColor);
+                EditorGUI.DrawRect(rect, Styles.HighlightColor);
             }
         }
 
@@ -195,27 +273,29 @@ namespace QuickEye.Editor
         {
             var iconCount = Icons.Length;
             var iconStyle = Styles.CenteredIcon;
-            iconRectWidth = iconSize + iconStyle.padding.horizontal + 1; // + style.margin.right;
-            var eInRow = rect.width / iconRectWidth;
-            elementsInRow = Mathf.FloorToInt(eInRow);
+            _iconRectWidth = _iconSize + iconStyle.padding.horizontal + 1; // + style.margin.right;
+            var eInRow = rect.width / _iconRectWidth;
+            _elementsInRow = Mathf.FloorToInt(eInRow);
 
-            var index = rowIndex * elementsInRow;
+            var index = rowIndex * _elementsInRow;
 
-            for (var j = 0; j < elementsInRow && index < iconCount; j++, index++)
+            for (var i = 0; i < _elementsInRow && index < iconCount; i++, index++)
             {
                 var icon = Icons[index];
-                var content = new GUIContent(icon);
 
-                using (KeepIconAspectRatio(icon, new Vector2(iconSize, iconSize)))
+                var content =
+                    new GUIContent(filter.HasFlag(IconFilter.RetinaVersions) ? icon.texture : icon.RetinaTexture);
+
+                using (QuickEyeGUIUtility.KeepIconAspectRatio(icon, new Vector2(_iconSize, _iconSize)))
                 {
                     var buttonRect = new Rect();
-                    buttonRect.width = buttonRect.height = iconRectWidth;
+                    buttonRect.width = buttonRect.height = _iconRectWidth;
                     buttonRect.y = rect.y;
-                    buttonRect.x = j * iconRectWidth;
+                    buttonRect.x = i * _iconRectWidth;
                     DrawSelectedBox(buttonRect, icon);
 
                     if (GUI.Button(buttonRect, content, iconStyle))
-                        OnIconClick(icon);
+                        OnIconClick(index);
                 }
             }
         }
@@ -224,9 +304,9 @@ namespace QuickEye.Editor
         {
             var iconCount = Icons.Length;
             var style = new GUIStyle("label");
-            iconRectWidth = iconSize + style.padding.horizontal + 1;
-            elementsInRow = Mathf.FloorToInt(listView.Position.width / iconRectWidth);
-            var x = Mathf.CeilToInt((float)iconCount / elementsInRow);
+            _iconRectWidth = _iconSize + style.padding.horizontal + 1;
+            _elementsInRow = Mathf.FloorToInt(listView.Position.width / _iconRectWidth);
+            var x = Mathf.CeilToInt((float)iconCount / _elementsInRow);
             return x;
         }
 
@@ -234,31 +314,21 @@ namespace QuickEye.Editor
         {
             if (!debugMode)
                 return;
-            for (int i = 0; i < elementsInRow; i++)
+            for (int i = 0; i < _elementsInRow; i++)
             {
-                var pos = new Vector2(i * iconRectWidth, 0);
-                EditorGUI.DrawRect(new Rect(pos, new Vector2(iconRectWidth, 5)), Random.ColorHSV());
+                var pos = new Vector2(i * _iconRectWidth, 0);
+                EditorGUI.DrawRect(new Rect(pos, new Vector2(_iconRectWidth, 5)), Random.ColorHSV());
             }
         }
 
-        private void DrawToolbar()
+        private void IconCount()
         {
-            using (new HorizontalScope(EditorStyles.toolbar, ExpandWidth(true)))
-            {
-                SortingButton();
-                ViewModeButton();
-                BackgroundToggle();
-                FilterButton();
-                Space(2);
-                SearchField();
-                FlexibleSpace();
-                IconSizeSlider();
-            }
+            Label($"({Icons.Length})");
         }
 
         private void IconSizeSlider()
         {
-            iconSize = HorizontalSlider(iconSize, iconSizeLimit.min, iconSizeLimit.max, MaxWidth(100),
+            _iconSize = HorizontalSlider(_iconSize, _iconSizeLimit.min, _iconSizeLimit.max, MaxWidth(100),
                 MinWidth(55));
         }
 
@@ -266,9 +336,9 @@ namespace QuickEye.Editor
         {
             using (var s = new EditorGUI.ChangeCheckScope())
             {
-                searchString = searchField.OnToolbarGUI(searchString, MaxWidth(200));
+                searchString = _searchField.OnToolbarGUI(searchString, MaxWidth(200));
                 if (s.changed)
-                    database.UpdateBySearch(searchString);
+                    _database.UpdateBySearch(searchString);
             }
         }
 
@@ -284,7 +354,7 @@ namespace QuickEye.Editor
         {
             var iconName = Styles.GetLayoutIcon(layout);
             var iconContent = EditorGUIUtility.IconContent(iconName);
-            using (KeepIconAspectRatio(iconContent.image, new Vector2(13, 13)))
+            using (QuickEyeGUIUtility.KeepIconAspectRatio(iconContent.image, new Vector2(13, 13)))
                 if (Button(iconContent, EditorStyles.toolbarButton, Width(30)))
                 {
                     layout = layout == Layout.Grid ? Layout.List : Layout.Grid;
@@ -301,11 +371,11 @@ namespace QuickEye.Editor
                 menu.AddItem(new GUIContent("Name"), sortingMode == Sorting.Name, () => Sort(Sorting.Name));
                 menu.AddItem(new GUIContent("Color"), sortingMode == Sorting.Color, () => Sort(Sorting.Color));
 
-                menu.DropDown(sortingButtonRect);
+                menu.DropDown(_sortingButtonRect);
             }
 
             if (Event.current.type == EventType.Repaint)
-                sortingButtonRect = GUILayoutUtility.GetLastRect();
+                _sortingButtonRect = GUILayoutUtility.GetLastRect();
         }
 
         private void FilterButton()
@@ -315,8 +385,9 @@ namespace QuickEye.Editor
                 var menu = new GenericMenu();
                 AddContextMenuItem("No Filters", IconFilter.None);
                 AddContextMenuItem("Alternative Skin", IconFilter.AlternativeSkin);
-                AddContextMenuItem("Smaller Sizes", IconFilter.SmallerVersions);
-                menu.DropDown(filterButtonRect);
+                AddContextMenuItem("Retina Versions", IconFilter.RetinaVersions);
+                AddContextMenuItem("Non Icon Directory", IconFilter.OtherImages);
+                menu.DropDown(_filterButtonRect);
 
                 void AddContextMenuItem(string label, IconFilter filterToToggle)
                 {
@@ -335,14 +406,14 @@ namespace QuickEye.Editor
             }
 
             if (Event.current.type == EventType.Repaint)
-                filterButtonRect = GUILayoutUtility.GetLastRect();
+                _filterButtonRect = GUILayoutUtility.GetLastRect();
         }
 
         private void UpdateFilterAndSearch()
         {
-            database.UpdateByFilter(filter);
+            _database.UpdateByFilter(filter);
             Sort(sortingMode);
-            database.UpdateBySearch(searchString);
+            _database.UpdateBySearch(searchString);
         }
 
         private void Sort(Sorting newSorting)
@@ -351,56 +422,18 @@ namespace QuickEye.Editor
             switch (sortingMode)
             {
                 case Sorting.Name:
-                    database.SortByName();
+                    _database.SortByName();
                     break;
                 case Sorting.Color:
-                    database.SortByColor();
+                    _database.SortByColor();
                     break;
                 default: throw new ArgumentOutOfRangeException();
             }
         }
 
-        private void DrawIcons()
-        {
-            listView.RowCount = layout == Layout.List ? Icons.Length : GetGridRowCount();
-            var style = EditorStyles.label;
-            listView.ElementHeight = iconSize + style.padding.vertical + style.margin.vertical;
-            if (drawAlternativeBackground)
-            {
-                var rect = layout == Layout.Grid
-                    ? listView.Position
-                    : new Rect(listView.Position)
-                    {
-                        width = iconRectWidth,
-                    };
-
-                EditorGUI.DrawRect(rect, AlternativeSkinBackgroundColor);
-            }
-
-            listView.OnGUI();
-        }
-
         private void UpdateLayout()
         {
             listView.DrawElement = layout == Layout.Grid ? (Action<Rect, int>)DrawGridElement : DrawListElement;
-        }
-
-        private static EditorGUIUtility.IconSizeScope KeepIconAspectRatio(Texture icon, Vector2 size)
-        {
-            if (icon == null)
-                return new EditorGUIUtility.IconSizeScope(size);
-            if (icon.width > icon.height)
-            {
-                var r = icon.width / size.x;
-                size.y = icon.height / r;
-            }
-            else
-            {
-                var r = icon.height / size.y;
-                size.x = icon.width / r;
-            }
-
-            return new EditorGUIUtility.IconSizeScope(size);
         }
 
         [Serializable]
@@ -417,22 +450,6 @@ namespace QuickEye.Editor
             List
         }
 
-        [Serializable]
-        private class SelectedItem
-        {
-            public string name;
-            public long fileId;
-            public Texture2D icon;
-
-            public SelectedItem(Texture2D icon)
-            {
-                name = icon.name;
-                fileId = AssetDatabaseUtil.GetFileId(icon);
-                this.icon = icon;
-            }
-        }
-
-
         public void AddItemsToMenu(GenericMenu menu)
         {
             menu.AddItem(new GUIContent("Debug Mode"), debugMode, () => debugMode ^= true);
@@ -440,12 +457,29 @@ namespace QuickEye.Editor
 
         private static class Styles
         {
+            private static readonly Color LightSkinColor = new Color32(194, 194, 194, 255);
+            private static readonly Color DarkSkinColor = new Color32(56, 56, 56, 255);
+
+            public static Color HighlightColor => EditorGUIUtility.isProSkin
+                ? DarkHighlightColor
+                : LightHighlightColor;
+
+            private static readonly Color LightHighlightColor = new Color(0.227f, 0.447f, 0.69f, 0.6f);
+            private static readonly Color DarkHighlightColor = new Color(0.173f, 0.365f, 0.529f, 0.6f);
+
+            public static Color BackgroundColor =>
+                EditorGUIUtility.isProSkin ? DarkSkinColor : LightSkinColor;
+
+            public static Color AlternativeSkinBackgroundColor =>
+                EditorGUIUtility.isProSkin ? LightSkinColor : DarkSkinColor;
+
+
             public static readonly GUIStyle CenteredIcon = new GUIStyle("label")
             {
                 alignment = TextAnchor.MiddleCenter
             };
-            
-            public const string FilterButtonIcon = 
+
+            public const string FilterButtonIcon =
 #if UNITY_2021_1_OR_NEWER
                 "Filter Icon";
 #else
@@ -456,7 +490,8 @@ namespace QuickEye.Editor
             {
                 return layout == Layout.Grid
 #if UNITY_2021_1_OR_NEWER
-                ? "GridView On" : "ListView On";
+                    ? "GridView On"
+                    : "ListView On";
 #else
                     ? "GridLayoutGroup Icon"
                     : "VerticalLayoutGroup Icon";
