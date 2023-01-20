@@ -23,7 +23,7 @@ namespace QuickEye.Editor.IconWindow
         private string searchString = "";
 
         [SerializeField]
-        private Sorting sortingMode;
+        private Sorting sortingMode = Sorting.Color;
 
         [SerializeField]
         private Layout layout;

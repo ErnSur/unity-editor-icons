@@ -16,13 +16,6 @@ namespace QuickEye.Editor.IconWindow
             return iconPath;
         }
 
-        [MenuItem("TEST/ExportSmallerIcon")]
-        public static void DebugExport(Texture2D icon)
-        {
-            ExportIconToPath("Assets/TestExport.png", icon, true);
-            AssetDatabase.ImportAsset("Assets/TestExport.png");
-        }
-
         public static void ExportIconToPath(string path, Texture2D icon)
         {
             File.WriteAllBytes(path, EncodeIconToPNG(icon, false));
